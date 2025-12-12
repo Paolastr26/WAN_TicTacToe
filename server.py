@@ -1,34 +1,40 @@
 # server.py
-import os
-import asyncio
-import websockets
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
-# Conjunto de clientes conectados
-clients = set()
+app = FastAPI()
 
-async def handler(websocket):
-    clients.add(websocket)
-    print("📌 Nuevo cliente conectado.")
+# Permitir conexiones desde cualquier origen 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# Lista de jugadores conectados 
+connected_players = []
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    if len(connected_players) >= 2:
+        await websocket.send_text("CERRAR")
+        await websocket.close()
+        return
+
+    connected_players.append(websocket)
     try:
-        async for message in websocket:
-            print(f"Mensaje recibido: {message}")
-            # Reenviar el mensaje a todos los demás clientes
-            for ws in clients:
-                if ws != websocket:
-                    await ws.send(message)
-
-    except websockets.ConnectionClosed:
-        print("❌ Cliente desconectado.")
-    finally:
-        clients.remove(websocket)
-
-async def main():
-    # Obtener el puerto asignado por Render o usar 8080 por defecto
-    PORT = int(os.environ.get("PORT", 8080))
-    print(f"🚀 Servidor iniciado. Escuchando en ws://0.0.0.0:{PORT}")
-    async with websockets.serve(handler, "0.0.0.0", PORT):
-        await asyncio.Future()  # Loop infinito para mantener el servidor activo
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        while True:
+            data = await websocket.receive_text()
+            # Reenviar a todos los demás jugadores
+            for player in connected_players:
+                if player != websocket:
+                    await player.send_text(data)
+    except WebSocketDisconnect:
+        connected_players.remove(websocket)
+        # Notificar al otro jugador si hay uno
+        for player in connected_players:
+            await player.send_text("CERRAR")
