@@ -7,7 +7,7 @@ from tkinter import messagebox
 # -------------------------------------------------
 # VARIABLES GLOBALES
 # -------------------------------------------------
-SERVER_URL = "wss://wan-tictactoe-1.onrender.com" # tu servidor Render
+SERVER_URL = "wss://wan-tictactoe-1.onrender.com/ws"# tu servidor Render
 peer_websocket = None
 my_turn = False
 running = True
