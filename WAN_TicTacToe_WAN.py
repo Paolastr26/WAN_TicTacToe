@@ -1,4 +1,4 @@
-# WAN Tic Tac Toe 3D - V2 para Render
+# WAN Tic Tac Toe 3D - V3 para Render
 import asyncio
 import websockets
 from tkinter import *
@@ -7,8 +7,7 @@ from tkinter import messagebox
 # -------------------------------------------------
 # VARIABLES GLOBALES
 # -------------------------------------------------
-SERVER_URL = "ws://wan-tictactoe-1.onrender.com:8080"  # tu servidor Render
-BUFFER_SIZE = 1024
+SERVER_URL = "wss://wan-tictactoe-1.onrender.com" # tu servidor Render
 peer_websocket = None
 my_turn = False
 running = True
@@ -17,10 +16,10 @@ jugadas = [[[0]*4 for _ in range(4)] for _ in range(4)]
 C = [[1,1,0],[1,0,1],[0,1,1],[1,0,0],[1,-1,0],[0,0,1],[-1,0,1],[0,1,0],[0,1,-1],
      [0,-1,-1],[0,-1,0],[0,0,-1],[0,0,0]]
 
-X=Y=Z=g=jugador=0
-botones=[]
-tablero=None
-waiting_label=None
+X = Y = Z = g = jugador = 0
+botones = []
+tablero = None
+waiting_label = None
 
 # -------------------------------------------------
 # FUNCIONES DE RED (WAN via WebSocket)
@@ -59,7 +58,7 @@ async def receive_messages():
                 tablero.after(0, tablero.destroy)
                 break
             x, y, z = map(int, message.split(","))
-            tablero.after(0, lambda: make_remote_move(x, y, z))
+            tablero.after(0, lambda x=x, y=y, z=z: make_remote_move(x, y, z))
             my_turn = True
             tablero.after(0, enable_buttons)
     except:
@@ -68,13 +67,6 @@ async def receive_messages():
 # -------------------------------------------------
 # FUNCIONES DEL JUEGO
 # -------------------------------------------------
-def safe_update_waiting(text):
-    try:
-        if tablero and waiting_label:
-            tablero.after(0, lambda: waiting_label.config(text=text))
-    except:
-        pass
-
 def tablero_lleno():
     for z in range(4):
         for y in range(4):
@@ -96,7 +88,7 @@ def fin_partida_dialogo(resultado=""):
 
 def crearBoton(valor, i):
     b = Button(tablero, text=valor, width=5, height=1, font=("Helvetica",15),
-               command=lambda: botonClick(i), state=DISABLED)
+               command=lambda i=i: botonClick(i), state=DISABLED)
     return b
 
 def enable_buttons():
@@ -124,7 +116,7 @@ def seguir_o_finalizar():
     return resp
 
 def botonClick(i):
-    global X,Y,Z,texto,g,jugador,my_turn
+    global X, Y, Z, g, jugador, my_turn
     if not my_turn or g:
         enable_buttons() if not g else disable_buttons()
         if g:
@@ -134,22 +126,13 @@ def botonClick(i):
     y = i % 16
     Y = y // 4
     X = y % 4
-    Label(tablero, text='X='+str(X), font='arial, 20', fg='green').place(x=20,y=50)
-    Label(tablero, text='Y='+str(Y), font='arial, 20', fg='green').place(x=20,y=100)
-    Label(tablero, text='Z='+str(Z), font='arial, 20', fg='green').place(x=20,y=150)
     if jugadas[Z][Y][X]==0:
-        texto = Label(tablero, text=' '*26, font='arial, 20', fg='gray')
-        texto.place(x=300, y=5)
-        texto_ = 'X' if jugador==0 else 'O'
         jugadas[Z][Y][X] = -1 if jugador==0 else 1
-        botones[i].config(text=texto_, font='arial 15', fg='blue' if jugador==0 else 'red')
-        ganador = False
-        for j in range(13):
-            if jugada_13(j):
-                ganador = True
+        botones[i].config(text='X' if jugador==0 else 'O', font='arial 15', fg='blue' if jugador==0 else 'red')
+        ganador = any(jugada_13(j) for j in range(13))
+        asyncio.create_task(send_move_ws(X, Y, Z))
         if ganador:
             g = 1
-            asyncio.create_task(send_move_ws(X,Y,Z))
             disable_buttons()
             Label(tablero, text="¡GANASTE!", font="arial, 20", fg="green").place(x=300,y=50)
             fin_partida_dialogo("GANASTE")
@@ -157,34 +140,25 @@ def botonClick(i):
             return
         if tablero_lleno():
             g = 1
-            asyncio.create_task(send_move_ws(X,Y,Z))
             disable_buttons()
             Label(tablero, text="¡EMPATE!", font="arial, 20", fg="blue").place(x=300,y=50)
             fin_partida_dialogo("EMPATE")
             my_turn = False
             return
-        asyncio.create_task(send_move_ws(X,Y,Z))
         jugador = not jugador
-        texto=Label(tablero, text='Jugador '+str(jugador+1),font='arial, 20', fg='green')
-        texto.place(x=500, y=620)
         my_turn = False
         disable_buttons()
     else:
-        texto=Label(tablero, text='Jugada Inválida',font='arial, 20', fg='green')
-        texto.place(x=300, y=5)
+        Label(tablero, text='Jugada Inválida', font='arial, 20', fg='green').place(x=300, y=5)
 
 def make_remote_move(x, y, z):
-    global jugador,g
+    global jugador, g
     i = z*16 + y*4 + x
     if g: return
     if jugadas[z][y][x]==0:
-        texto_='O' if jugador==0 else 'X'
-        jugadas[z][y][x]=-1 if jugador!=0 else 1
-        botones[i].config(text=texto_, font='arial 15', fg='red' if jugador!=0 else 'blue')
-        ganador = False
-        for j in range(13):
-            if jugada_13(j):
-                ganador=True
+        jugadas[z][y][x] = -1 if jugador!=0 else 1
+        botones[i].config(text='O' if jugador==0 else 'X', font='arial 15', fg='red' if jugador!=0 else 'blue')
+        ganador = any(jugada_13(j) for j in range(13))
         if ganador:
             g = 1
             disable_buttons()
@@ -196,8 +170,6 @@ def make_remote_move(x, y, z):
             Label(tablero, text="¡EMPATE!", font="arial, 20", fg="blue").place(x=300,y=50)
             return
         jugador = not jugador
-        texto=Label(tablero, text='Jugador '+str(jugador+1),font='arial, 20', fg='green')
-        texto.place(x=500, y=620)
     enable_buttons()
 
 def jugada_13(c):
@@ -205,12 +177,12 @@ def jugada_13(c):
     z1 = Z if tz>0 else -1
     y1 = Y if ty>0 else -1
     x1 = X if tx>0 else -1
-    s=0
+    s = 0
     for i in range(4):
         z = Z if z1>=0 else 3-i if tz else i
         y = Y if y1>=0 else 3-i if ty else i
         x = X if x1>=0 else 3-i if tx else i
-        s+=jugadas[z][y][x]
+        s += jugadas[z][y][x]
     if abs(s) < 4:
         return False
     texto_ = 'X' if jugador==0 else 'O'
@@ -218,21 +190,20 @@ def jugada_13(c):
         z = Z if z1>=0 else 3-i if tz else i
         y = Y if y1>=0 else 3-i if ty else i
         x = X if x1>=0 else 3-i if tx else i
-        botones[z*16+y*4+x].config(text=texto_, font='arial 15',fg='yellow',bg='red')
+        botones[z*16+y*4+x].config(text=texto_, font='arial 15', fg='yellow', bg='red')
     return True
 
 def inicio():
-    global g,X,Y,Z,jugador,my_turn
+    global g, X, Y, Z, jugador, my_turn
     for z in range(4):
         for y in range(4):
             for x in range(4):
-                jugadas[z][y][x]=0
-                botones[z*16+y*4+x].config(text='',font='arial 15',fg='blue',bg='white')
-    X=Y=Z=g=0
+                jugadas[z][y][x] = 0
+                botones[z*16+y*4+x].config(text='', font='arial 15', fg='blue', bg='white')
+    X = Y = Z = g = 0
     jugador = 0
     my_turn = True
-    texto=Label(tablero, text='Jugador '+str(jugador+1),font='arial, 20', fg='green')
-    texto.place(x=500, y=620)
+    Label(tablero, text='Jugador '+str(jugador+1), font='arial, 20', fg='green').place(x=500, y=620)
     enable_buttons()
 
 def on_closing():
@@ -248,7 +219,7 @@ def on_closing():
 # -------------------------------------------------
 # INTERFAZ PRINCIPAL
 # -------------------------------------------------
-def start_network_setup():
+async def start_network_setup():
     global waiting_label, tablero
     tablero = Tk()
     tablero.title('Tic Tac Toe 3D')
@@ -257,17 +228,16 @@ def start_network_setup():
     
     # Crear botones
     for b in range(64):
-        botones.append(crearBoton(' ',b))
-    contador=0
+        botones.append(crearBoton(' ', b))
+    contador = 0
     for z in range(3,-1,-1):
         for y in range(4):
             for x in range(4):
-                botones[contador].grid(row=y+z*4,column=x+(3-z)*4)
-                contador+=1
+                botones[contador].grid(row=y+z*4, column=x+(3-z)*4)
+                contador += 1
     
-    botonexit = Button(tablero,text='Exit',width=5,height=1,font=("Helvetica",15),
-                       command=seguir_o_finalizar)
-    botonexit.grid(row=0,column=10)
+    Button(tablero, text='Exit', width=5, height=1, font=("Helvetica",15),
+           command=seguir_o_finalizar).grid(row=0,column=10)
     tablero.protocol("WM_DELETE_WINDOW", on_closing)
     inicio()
     
@@ -277,10 +247,17 @@ def start_network_setup():
     # Conexión WAN
     asyncio.create_task(connect_to_server())
     
-    tablero.mainloop()
+    # Loop principal de Tkinter + asyncio
+    while running:
+        try:
+            tablero.update()
+            await asyncio.sleep(0.01)
+        except tk.TclError:
+            break
 
 # -------------------------------------------------
 # MAIN
 # -------------------------------------------------
 if __name__ == "__main__":
     asyncio.run(start_network_setup())
+
